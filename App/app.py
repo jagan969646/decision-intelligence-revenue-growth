@@ -3,28 +3,43 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from PIL import Image
+import os
 
 # Set page configuration
 st.set_page_config(page_title="Decision Intelligence Dashboard", layout="wide")
 
+# --- PATH HANDLING FOR DEPLOYMENT ---
+# This ensures the app finds the files regardless of the folder structure
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_path(filename):
+    return os.path.join(BASE_DIR, filename)
+
 # Load Data
 @st.cache_data
 def load_data():
-    forecast_df = pd.read_csv('revenue_forecast_scenarios.csv')
-    roi_df = pd.read_csv('roi_simulation_results.csv')
-    segment_df = pd.read_csv('segment_decision_summary.csv')
+    # Using the get_path helper to ensure files are found
+    forecast_df = pd.read_csv(get_path('revenue_forecast_scenarios.csv'))
+    roi_df = pd.read_csv(get_path('roi_simulation_results.csv'))
+    segment_df = pd.read_csv(get_path('segment_decision_summary.csv'))
     
     # Preprocessing
     forecast_df['Date'] = pd.to_datetime(forecast_df['Date'], dayfirst=True)
     return forecast_df, roi_df, segment_df
 
-forecast_df, roi_df, segment_df = load_data()
+# Handle potential data loading errors gracefully
+try:
+    forecast_df, roi_df, segment_df = load_data()
+except FileNotFoundError as e:
+    st.error(f"Error: Missing Data Files. Please ensure CSVs are in the same folder as app.py. ({e})")
+    st.stop()
 
 # --- HEADER WITH LOGO ---
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
     try:
-        logo = Image.open('Mu_sigma_logo.jpg')
+        logo_path = get_path('Mu_sigma_logo.jpg')
+        logo = Image.open(logo_path)
         st.image(logo, width=150)
     except:
         st.warning("Logo file not found.")
@@ -42,7 +57,6 @@ page = st.sidebar.radio("Go to", ["Executive Summary", "Customer Segmentation", 
 if page == "Executive Summary":
     st.header("📊 Executive Summary")
     
-    # Top Row Metrics
     col1, col2, col3, col4 = st.columns(4)
     total_customers = segment_df['Customer_Count'].sum()
     total_gain = roi_df['Projected_Gain'].sum()
@@ -56,7 +70,6 @@ if page == "Executive Summary":
 
     st.markdown("---")
     
-    # Quick View: Segmentation vs ROI
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Customer Distribution by Segment")
@@ -73,7 +86,6 @@ if page == "Executive Summary":
 # --- PAGE 2: CUSTOMER SEGMENTATION ---
 elif page == "Customer Segmentation":
     st.header("👥 Customer Segmentation Analysis")
-    
     st.dataframe(segment_df.style.background_gradient(subset=['Avg_Monetary', 'Customer_Count'], cmap='Greens'), use_container_width=True)
 
     col1, col2 = st.columns(2)
@@ -92,14 +104,11 @@ elif page == "Customer Segmentation":
 # --- PAGE 3: REVENUE FORECASTING ---
 elif page == "Revenue Forecasting":
     st.header("📈 Revenue Forecasting Scenarios")
-    
     scenarios = st.multiselect("Select Scenarios to Display", 
                                ['Base_Forecast', 'Best_Case', 'Worst_Case'], 
                                default=['Base_Forecast', 'Best_Case', 'Worst_Case'])
 
     fig = go.Figure()
-
-    # Add Shaded Confidence Interval
     fig.add_trace(go.Scatter(
         x=forecast_df['Date'].tolist() + forecast_df['Date'].tolist()[::-1],
         y=forecast_df['Upper_CI'].tolist() + forecast_df['Lower_CI'].tolist()[::-1],
@@ -109,7 +118,6 @@ elif page == "Revenue Forecasting":
         name='95% Confidence Interval',
     ))
 
-    # Add lines
     colors = {'Base_Forecast': '#1f77b4', 'Best_Case': '#2ca02c', 'Worst_Case': '#d62728'}
     for scenario in scenarios:
         fig.add_trace(go.Scatter(x=forecast_df['Date'], y=forecast_df[scenario], 
@@ -117,7 +125,6 @@ elif page == "Revenue Forecasting":
 
     fig.update_layout(title="6-Month Revenue Projection", xaxis_title="Date", yaxis_title="Revenue ($)", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
-    
     st.info("The shaded area represents the 95% Confidence Interval for the Base Forecast.")
 
 # --- PAGE 4: ROI ANALYSIS ---
@@ -140,4 +147,6 @@ elif page == "ROI Analysis":
     c1, c2, c3 = st.columns(3)
     c1.metric("ROI", f"{seg_data['ROI']:.2f}x")
     c2.metric("Break-Even Target", f"${seg_data['BreakEven_Revenue']:,.2f}")
-    c3.metric("Efficiency Score", f"{(seg_data['Projected_Gain']/seg_data['Investment']):.1f}")
+    # Fixed syntax error in the calculation below
+    efficiency = (seg_data['Projected_Gain']/seg_data['Investment'])
+    c3.metric("Efficiency Score", f"{efficiency:.1f}x")
